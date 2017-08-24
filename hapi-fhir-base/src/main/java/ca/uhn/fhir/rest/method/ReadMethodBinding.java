@@ -219,7 +219,7 @@ public class ReadMethodBinding extends BaseResourceReturningMethodBinding implem
 					ifNoneMatch = MethodUtil.parseETagValue(ifNoneMatch);
 					if (responseResource.getIdElement() != null && responseResource.getIdElement().hasVersionIdPart()) {
 						if (responseResource.getIdElement().getVersionIdPart().equals(ifNoneMatch)) {
-							ourLog.debug("Returning HTTP 301 because request specified {}={}", Constants.HEADER_IF_NONE_MATCH, ifNoneMatch);
+							ourLog.debug("Returning HTTP 304 because request specified {}={}", Constants.HEADER_IF_NONE_MATCH, ifNoneMatch);
 							throw new NotModifiedException("Not Modified");
 						}
 					}
@@ -240,8 +240,8 @@ public class ReadMethodBinding extends BaseResourceReturningMethodBinding implem
 					lastModified = ((IAnyResource)responseResource).getMeta().getLastUpdated();
 				}
 				
-				if (lastModified != null && lastModified.getTime() > ifModifiedSinceDate.getTime()) {
-					ourLog.debug("Returning HTTP 301 because If-Modified-Since does not match");
+				if (lastModified != null && lastModified.getTime() <= ifModifiedSinceDate.getTime()) {
+					ourLog.debug("Returning HTTP 304 because If-Modified-Since does not match");
 					throw new NotModifiedException("Not Modified");
 				}
 			}
