@@ -880,9 +880,11 @@ public class InstanceValidator extends BaseValidator implements IResourceValidat
     rule(errors, IssueType.CODEINVALID, element.line(), element.col(), path, isAbsolute(system), "Coding.system must be an absolute reference, not a local reference");
 
     if (system != null && code != null && !noTerminologyChecks) {
-      rule(errors, IssueType.CODEINVALID, element.line(), element.col(), path, !isValueSet(system), "The Coding references a value set, not a code system (\""+system+"\")");
+      if (!isCodeSystem(system)) {
+        rule(errors, IssueType.CODEINVALID, element.line(), element.col(), path, !isValueSet(system), "The Coding references a value set, not a code system (\""+system+"\")");
+      }
       try {
-        if (checkCode(errors, element, path, code, system, display))
+        if (checkCode(errors, element, path, code, system, display)) {
           if (theElementCntext != null && theElementCntext.hasBinding()) {
             ElementDefinitionBindingComponent binding = theElementCntext.getBinding();
             if (warning(errors, IssueType.CODEINVALID, element.line(), element.col(), path, binding != null, "Binding for " + path + " missing")) {
@@ -931,9 +933,19 @@ public class InstanceValidator extends BaseValidator implements IResourceValidat
               }
             }
           }
+        }
       } catch (Exception e) {
         rule(errors, IssueType.CODEINVALID, element.line(), element.col(), path, false, "Error "+e.getMessage()+" validating Coding");
       }
+      }
+    }
+
+  private boolean isCodeSystem(String url) {
+    try {
+      CodeSystem cs = context.fetchResourceWithException(CodeSystem.class, url);
+      return cs != null;
+    } catch (Exception e) {
+      return false;
     }
   }
 
@@ -1598,7 +1610,7 @@ public class InstanceValidator extends BaseValidator implements IResourceValidat
       if (!containerType.hasTargetProfile(tu) && !containerType.hasTargetProfile("http://hl7.org/fhir/StructureDefinition/Resource")) {
         boolean matchingResource = false;
         for (CanonicalType target: containerType.getTargetProfile()) {
-          StructureDefinition sd = (StructureDefinition)context.fetchResource(StructureDefinition.class, target.asStringValue());
+          StructureDefinition sd = context.fetchResource(StructureDefinition.class, target.asStringValue());
           if (("http://hl7.org/fhir/StructureDefinition/" + sd.getType()).equals(tu)) {
             matchingResource = true;
             break;
@@ -2447,7 +2459,7 @@ public class InstanceValidator extends BaseValidator implements IResourceValidat
       expression.append(" and (" + discriminator + " = ");
       if (fixed instanceof StringType) {
         Gson gson = new Gson();
-        String json = gson.toJson((StringType)fixed);
+        String json = gson.toJson(fixed);
         String escapedString = json.substring(json.indexOf(":")+2);
         escapedString = escapedString.substring(0, escapedString.indexOf(",\"myStringValue")-1);
         expression.append("'" + escapedString + "'");
