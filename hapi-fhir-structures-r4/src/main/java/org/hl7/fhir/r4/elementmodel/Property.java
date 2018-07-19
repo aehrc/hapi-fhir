@@ -3,6 +3,8 @@ package org.hl7.fhir.r4.elementmodel;
 import java.util.ArrayList;
 import java.util.List;
 
+import org.hl7.fhir.exceptions.DefinitionException;
+import org.hl7.fhir.exceptions.FHIRException;
 import org.hl7.fhir.r4.conformance.ProfileUtilities;
 import org.hl7.fhir.r4.context.IWorkerContext;
 import org.hl7.fhir.r4.formats.FormatUtilities;
@@ -14,16 +16,17 @@ import org.hl7.fhir.r4.model.StructureDefinition.StructureDefinitionKind;
 import org.hl7.fhir.r4.model.TypeDetails;
 import org.hl7.fhir.r4.utils.ToolingExtensions;
 import org.hl7.fhir.utilities.Utilities;
-import org.apache.commons.lang3.StringUtils;
-import org.hl7.fhir.exceptions.DefinitionException;
-import org.hl7.fhir.exceptions.FHIRException;
 
 public class Property {
+
+        final static String[] PRIMITIVES = {
+                "boolean", "integer", "string", "decimal", "uri", "url", "canonical", "base64Binary", "instant", "date", "dateTime", "time", "code", "oid", "id", "markdown", "unsignedInt", "positiveInt", "xhtml"
+        };
 
 	private IWorkerContext context;
 	private ElementDefinition definition;
 	private StructureDefinition structure;
-	private Boolean canBePrimitive; 
+	private Boolean canBePrimitive;
 
 	public Property(IWorkerContext context, ElementDefinition definition, StructureDefinition structure) {
 		this.context = context;
@@ -84,7 +87,7 @@ public class Property {
       String tail = ed.getPath().substring(ed.getPath().lastIndexOf(".")+1);
       if (tail.endsWith("[x]") && elementName != null && elementName.startsWith(tail.substring(0, tail.length()-3))) {
 				String name = elementName.substring(tail.length()-3);
-        return isPrimitive(lowFirst(name)) ? lowFirst(name) : name;        
+        return isPrimitive(lowFirst(name)) ? lowFirst(name) : name;
 			} else
         throw new Error("logic error, gettype when types > 1, name mismatch for "+elementName+" on at "+ed.getPath());
     } else if (ed.getType().get(0).getCode() == null) {
@@ -108,7 +111,7 @@ public class Property {
       String tail = definition.getPath().substring(definition.getPath().lastIndexOf(".")+1);
       if (tail.endsWith("[x]") && elementName.startsWith(tail.substring(0, tail.length()-3))) {
         String name = elementName.substring(tail.length()-3);
-        return true;        
+        return true;
       } else
         return false;
     } else
@@ -121,7 +124,7 @@ public class Property {
 
 	/**
 	 * Is the given name a primitive
-	 * 
+	 *
 	 * @param E.g. "Observation.status"
 	 */
 	public boolean isPrimitiveName(String name) {
@@ -131,12 +134,11 @@ public class Property {
 
 	/**
 	 * Is the given type a primitive
-	 * 
+	 *
 	 * @param E.g. "integer"
 	 */
 	public boolean isPrimitive(String code) {
-		StructureDefinition sd = context.fetchResource(StructureDefinition.class, "http://hl7.org/fhir/StructureDefinition/"+code);
-      return sd != null && sd.getKind() == StructureDefinitionKind.PRIMITIVETYPE;
+	    return Utilities.existsInList(code, PRIMITIVES);
 	}
 
 	private String lowFirst(String t) {
@@ -179,11 +181,11 @@ public class Property {
     }
     return result;
   }
-  
+
 	public boolean IsLogicalAndHasPrimitiveValue(String name) {
 //		if (canBePrimitive!= null)
 //			return canBePrimitive;
-		
+
 		canBePrimitive = false;
   	if (structure.getKind() != StructureDefinitionKind.LOGICAL)
   		return false;
@@ -209,7 +211,7 @@ public class Property {
     if (definition.getType().size() <= 1)
       return false;
     String tn = definition.getType().get(0).getCode();
-    for (int i = 1; i < definition.getType().size(); i++) 
+    for (int i = 1; i < definition.getType().size(); i++)
       if (!definition.getType().get(i).getCode().equals(tn))
         return true;
     return false;
@@ -244,8 +246,8 @@ public class Property {
             if (t == null && ToolingExtensions.hasExtension(ed, "http://hl7.org/fhir/StructureDefinition/elementdefinition-defaulttype"))
               t = ToolingExtensions.readStringExtension(ed, "http://hl7.org/fhir/StructureDefinition/elementdefinition-defaulttype");
             boolean ok = false;
-            for (TypeRefComponent tr : ed.getType()) { 
-              if (tr.getCode().equals(t)) 
+            for (TypeRefComponent tr : ed.getType()) {
+              if (tr.getCode().equals(t))
                 ok = true;
               if (Utilities.isAbsoluteUrl(tr.getCode())) {
                 StructureDefinition sdt = context.fetchResource(StructureDefinition.class, tr.getCode());
@@ -259,7 +261,7 @@ public class Property {
             }
              if (!ok)
                throw new DefinitionException("Type '"+t+"' is not an acceptable type for '"+elementName+"' on property "+definition.getPath());
-            
+
           } else {
             t = elementName.substring(tail(ed.getPath()).length() - 3);
             if (isPrimitive(lowFirst(t)))
@@ -271,7 +273,7 @@ public class Property {
         for (TypeRefComponent aType: ed.getType()) {
           if (aType.getCode().equals(t)) {
             if (aType.hasProfile()) {
-              assert aType.getProfile().size() == 1; 
+              assert aType.getProfile().size() == 1;
               url = aType.getProfile().get(0).getValue();
             } else {
               url = ProfileUtilities.sdNs(t);
@@ -281,13 +283,13 @@ public class Property {
         }
         if (url==null)
           throw new FHIRException("Unable to find type " + t + " for element " + elementName + " with path " + ed.getPath());
-        sd = context.fetchResource(StructureDefinition.class, url);        
+        sd = context.fetchResource(StructureDefinition.class, url);
         if (sd == null)
           throw new DefinitionException("Unable to find type '"+t+"' for name '"+elementName+"' on property "+definition.getPath());
         children = ProfileUtilities.getChildMap(sd, sd.getSnapshot().getElement().get(0));
       }
     }
-    List<Property> properties = new ArrayList<Property>();
+    List<Property> properties = new ArrayList<>();
     for (ElementDefinition child : children) {
       properties.add(new Property(context, child, sd));
     }
@@ -326,7 +328,7 @@ public class Property {
         children = ProfileUtilities.getChildMap(sd, sd.getSnapshot().getElement().get(0));
       }
     }
-    List<Property> properties = new ArrayList<Property>();
+    List<Property> properties = new ArrayList<>();
     for (ElementDefinition child : children) {
       properties.add(new Property(context, child, sd));
     }
