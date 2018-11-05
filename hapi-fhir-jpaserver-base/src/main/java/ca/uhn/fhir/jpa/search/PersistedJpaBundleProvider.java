@@ -32,6 +32,7 @@ import ca.uhn.fhir.model.primitive.InstantDt;
 import ca.uhn.fhir.rest.api.server.IBundleProvider;
 import org.hl7.fhir.instance.model.api.IBaseResource;
 import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.TransactionStatus;
 import org.springframework.transaction.support.TransactionCallback;
 import org.springframework.transaction.support.TransactionCallbackWithoutResult;
@@ -75,13 +76,13 @@ public class PersistedJpaBundleProvider implements IBundleProvider {
 		mySearchEntity = null;
 	}
 
-	protected List<IBaseResource> doHistoryInTransaction(int theFromIndex, int theToIndex) {
+	private List<IBaseResource> doHistoryInTransaction(int theFromIndex, int theToIndex) {
 		List<ResourceHistoryTable> results;
 
 		CriteriaBuilder cb = myEntityManager.getCriteriaBuilder();
 		CriteriaQuery<ResourceHistoryTable> q = cb.createQuery(ResourceHistoryTable.class);
 		Root<ResourceHistoryTable> from = q.from(ResourceHistoryTable.class);
-		List<Predicate> predicates = new ArrayList<Predicate>();
+		List<Predicate> predicates = new ArrayList<>();
 
 		if (mySearchEntity.getResourceType() == null) {
 			// All resource types
@@ -134,13 +135,8 @@ public class PersistedJpaBundleProvider implements IBundleProvider {
 		final List<Long> pidsSubList = mySearchCoordinatorSvc.getResources(myUuid, theFromIndex, theToIndex);
 
 		TransactionTemplate template = new TransactionTemplate(myPlatformTransactionManager);
-		template.setPropagationBehavior(TransactionTemplate.PROPAGATION_REQUIRED);
-		return template.execute(new TransactionCallback<List<IBaseResource>>() {
-			@Override
-			public List<IBaseResource> doInTransaction(TransactionStatus theStatus) {
-				return toResourceList(sb, pidsSubList);
-			}
-		});
+		template.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRED);
+		return template.execute(theStatus -> toResourceList(sb, pidsSubList));
 	}
 
 	private void ensureDependenciesInjected() {
@@ -215,6 +211,7 @@ public class PersistedJpaBundleProvider implements IBundleProvider {
 		}
 	}
 
+	@Override
 	public String getUuid() {
 		return myUuid;
 	}
@@ -223,7 +220,7 @@ public class PersistedJpaBundleProvider implements IBundleProvider {
 		return myCacheHit;
 	}
 
-	public void setCacheHit(boolean theCacheHit) {
+	void setCacheHit(boolean theCacheHit) {
 		myCacheHit = theCacheHit;
 	}
 
@@ -253,7 +250,7 @@ public class PersistedJpaBundleProvider implements IBundleProvider {
 		mySearchDao = theSearchDao;
 	}
 
-	protected void setSearchEntity(Search theSearchEntity) {
+	void setSearchEntity(Search theSearchEntity) {
 		mySearchEntity = theSearchEntity;
 	}
 
@@ -269,11 +266,11 @@ public class PersistedJpaBundleProvider implements IBundleProvider {
 		return Math.max(0, size);
 	}
 
-	protected List<IBaseResource> toResourceList(ISearchBuilder sb, List<Long> pidsSubList) {
-		Set<Long> includedPids = new HashSet<Long>();
+	List<IBaseResource> toResourceList(ISearchBuilder sb, List<Long> pidsSubList) {
+		Set<Long> includedPids = new HashSet<>();
 		if (mySearchEntity.getSearchType() == SearchTypeEnum.SEARCH) {
-			includedPids.addAll(sb.loadReverseIncludes(myDao, myContext, myEntityManager, pidsSubList, mySearchEntity.toRevIncludesList(), true, mySearchEntity.getLastUpdated()));
-			includedPids.addAll(sb.loadReverseIncludes(myDao, myContext, myEntityManager, pidsSubList, mySearchEntity.toIncludesList(), false, mySearchEntity.getLastUpdated()));
+			includedPids.addAll(sb.loadIncludes(myDao, myContext, myEntityManager, pidsSubList, mySearchEntity.toRevIncludesList(), true, mySearchEntity.getLastUpdated()));
+			includedPids.addAll(sb.loadIncludes(myDao, myContext, myEntityManager, pidsSubList, mySearchEntity.toIncludesList(), false, mySearchEntity.getLastUpdated()));
 		}
 
 		// Execute the query and make sure we return distinct results

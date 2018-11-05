@@ -26,6 +26,7 @@ import ca.uhn.fhir.context.ProvidedResourceScanner;
 import ca.uhn.fhir.context.RuntimeResourceDefinition;
 import ca.uhn.fhir.context.api.AddProfileTagEnum;
 import ca.uhn.fhir.context.api.BundleInclusionRule;
+import ca.uhn.fhir.model.primitive.InstantDt;
 import ca.uhn.fhir.parser.IParser;
 import ca.uhn.fhir.rest.annotation.Destroy;
 import ca.uhn.fhir.rest.annotation.IdParam;
@@ -121,10 +122,10 @@ public class RestfulServer extends HttpServlet implements IRestfulServer<Servlet
 	 */
 	private String myServerVersion = createPoweredByHeaderProductVersion();
 	private boolean myStarted;
-	private Map<String, IResourceProvider> myTypeToProvider = new HashMap<>();
 	private boolean myUncompressIncomingContents = true;
 	private boolean myUseBrowserFriendlyContentTypes;
 	private ITenantIdentificationStrategy myTenantIdentificationStrategy;
+	private Date myConformanceDate;
 
 	/**
 	 * Constructor. Note that if no {@link FhirContext} is passed in to the server (either through the constructor, or
@@ -194,19 +195,14 @@ public class RestfulServer extends HttpServlet implements IRestfulServer<Servlet
 		result.setServerName(getServerName());
 		result.setFhirContext(getFhirContext());
 		result.setServerAddressStrategy(myServerAddressStrategy);
-		InputStream inputStream = null;
-		try {
-			inputStream = getClass().getResourceAsStream("/META-INF/MANIFEST.MF");
+		try (InputStream inputStream = getClass().getResourceAsStream("/META-INF/MANIFEST.MF")) {
 			if (inputStream != null) {
 				Manifest manifest = new Manifest(inputStream);
-				result.setConformanceDate(manifest.getMainAttributes().getValue("Build-Time"));
+				String value = manifest.getMainAttributes().getValue("Build-Time");
+				result.setConformanceDate(new InstantDt(value));
 			}
-		} catch (IOException e) {
+		} catch (Exception e) {
 			// fall through
-		} finally {
-			if (inputStream != null) {
-				IOUtils.closeQuietly(inputStream);
-			}
 		}
 		return result;
 	}
@@ -304,7 +300,7 @@ public class RestfulServer extends HttpServlet implements IRestfulServer<Servlet
 		} else {
 			resourceBinding = myResourceNameToBinding.get(resourceName);
 			if (resourceBinding == null) {
-				throw new ResourceNotFoundException("Unknown resource type '" + resourceName + "' - Server knows how to handle: " + myResourceNameToBinding.keySet());
+				throwUnknownResourceTypeException(resourceName);
 			}
 		}
 
@@ -320,7 +316,7 @@ public class RestfulServer extends HttpServlet implements IRestfulServer<Servlet
 			if (isBlank(requestPath)) {
 				throw new InvalidRequestException(myFhirContext.getLocalizer().getMessage(RestfulServer.class, "rootRequest"));
 			}
-			throw new InvalidRequestException(myFhirContext.getLocalizer().getMessage(RestfulServer.class, "unknownMethod", requestType.name(), requestPath, requestDetails.getParameters().keySet()));
+			throwUnknownFhirOperationException(requestDetails, requestPath, requestType);
 		}
 		return resourceMethod;
 	}
@@ -379,7 +375,7 @@ public class RestfulServer extends HttpServlet implements IRestfulServer<Servlet
 		try {
 			count += findResourceMethods(theProvider, clazz);
 		} catch (ConfigurationException e) {
-			throw new ConfigurationException("Failure scanning class " + clazz.getSimpleName() + ": " + e.getMessage());
+			throw new ConfigurationException("Failure scanning class " + clazz.getSimpleName() + ": " + e.getMessage(), e);
 		}
 		if (count == 0) {
 			throw new ConfigurationException("Did not find any annotated RESTful methods on provider class " + theProvider.getClass().getCanonicalName());
@@ -828,7 +824,20 @@ public class RestfulServer extends HttpServlet implements IRestfulServer<Servlet
 			}
 
 			if (params == null) {
-				params = new HashMap<>(theRequest.getParameterMap());
+
+				// If the request is coming in with a content-encoding, don't try to
+				// load the params from the content.
+				if (isNotBlank(theRequest.getHeader(Constants.HEADER_CONTENT_ENCODING))) {
+					if (isNotBlank(theRequest.getQueryString())) {
+						params = UrlUtil.parseQueryString(theRequest.getQueryString());
+					} else {
+						params = Collections.emptyMap();
+					}
+				}
+
+				if (params == null) {
+					params = new HashMap<>(theRequest.getParameterMap());
+				}
 			}
 
 			requestDetails.setParameters(params);
@@ -1246,7 +1255,7 @@ public class RestfulServer extends HttpServlet implements IRestfulServer<Servlet
 		String operation = null;
 		String compartment = null;
 		if (tok.hasMoreTokens()) {
-			resourceName = tok.nextToken();
+			resourceName = tok.nextTokenUnescapedAndSanitized();
 			if (partIsOperation(resourceName)) {
 				operation = resourceName;
 				resourceName = null;
@@ -1255,7 +1264,7 @@ public class RestfulServer extends HttpServlet implements IRestfulServer<Servlet
 		theRequestDetails.setResourceName(resourceName);
 
 		if (tok.hasMoreTokens()) {
-			String nextString = tok.nextToken();
+			String nextString = tok.nextTokenUnescapedAndSanitized();
 			if (partIsOperation(nextString)) {
 				operation = nextString;
 			} else {
@@ -1265,10 +1274,10 @@ public class RestfulServer extends HttpServlet implements IRestfulServer<Servlet
 		}
 
 		if (tok.hasMoreTokens()) {
-			String nextString = tok.nextToken();
+			String nextString = tok.nextTokenUnescapedAndSanitized();
 			if (nextString.equals(Constants.PARAM_HISTORY)) {
 				if (tok.hasMoreTokens()) {
-					String versionString = tok.nextToken();
+					String versionString = tok.nextTokenUnescapedAndSanitized();
 					if (id == null) {
 						throw new InvalidRequestException("Don't know how to handle request path: " + theRequestPath);
 					}
@@ -1290,7 +1299,7 @@ public class RestfulServer extends HttpServlet implements IRestfulServer<Servlet
 		String secondaryOperation = null;
 
 		while (tok.hasMoreTokens()) {
-			String nextString = tok.nextToken();
+			String nextString = tok.nextTokenUnescapedAndSanitized();
 			if (operation == null) {
 				operation = nextString;
 			} else if (secondaryOperation == null) {
@@ -1365,14 +1374,9 @@ public class RestfulServer extends HttpServlet implements IRestfulServer<Servlet
 						throw new NullPointerException("getResourceType() on class '" + rsrcProvider.getClass().getCanonicalName() + "' returned null");
 					}
 					String resourceName = getFhirContext().getResourceDefinition(resourceType).getName();
-					if (myTypeToProvider.containsKey(resourceName)) {
-						throw new ConfigurationException("Multiple resource providers return resource type[" + resourceName + "]: First[" + myTypeToProvider.get(resourceName).getClass().getCanonicalName()
-							+ "] and Second[" + rsrcProvider.getClass().getCanonicalName() + "]");
-					}
 					if (!inInit) {
 						myResourceProviders.add(rsrcProvider);
 					}
-					myTypeToProvider.put(resourceName, rsrcProvider);
 					providedResourceScanner.scanForProvidedResources(rsrcProvider);
 					newResourceProviders.add(rsrcProvider);
 				} else {
@@ -1384,7 +1388,7 @@ public class RestfulServer extends HttpServlet implements IRestfulServer<Servlet
 
 			}
 			if (!newResourceProviders.isEmpty()) {
-				ourLog.info("Added {} resource provider(s). Total {}", newResourceProviders.size(), myTypeToProvider.size());
+				ourLog.info("Added {} resource provider(s). Total {}", newResourceProviders.size(), myResourceProviders.size());
 				for (IResourceProvider provider : newResourceProviders) {
 					assertProviderIsValid(provider);
 					findResourceMethods(provider);
@@ -1568,6 +1572,14 @@ public class RestfulServer extends HttpServlet implements IRestfulServer<Servlet
 		myTenantIdentificationStrategy = theTenantIdentificationStrategy;
 	}
 
+	protected void throwUnknownFhirOperationException(RequestDetails requestDetails, String requestPath, RequestTypeEnum theRequestType) {
+		throw new InvalidRequestException(myFhirContext.getLocalizer().getMessage(RestfulServer.class, "unknownMethod", theRequestType.name(), requestPath, requestDetails.getParameters().keySet()));
+	}
+
+	protected void throwUnknownResourceTypeException(String theResourceName) {
+		throw new ResourceNotFoundException("Unknown resource type '" + theResourceName + "' - Server knows how to handle: " + myResourceNameToBinding.keySet());
+	}
+
 	public void unregisterInterceptor(IServerInterceptor theInterceptor) {
 		Validate.notNull(theInterceptor, "Interceptor can not be null");
 		myInterceptors.remove(theInterceptor);
@@ -1597,7 +1609,6 @@ public class RestfulServer extends HttpServlet implements IRestfulServer<Servlet
 					IResourceProvider rsrcProvider = (IResourceProvider) provider;
 					Class<? extends IBaseResource> resourceType = rsrcProvider.getResourceType();
 					String resourceName = getFhirContext().getResourceDefinition(resourceType).getName();
-					myTypeToProvider.remove(resourceName);
 					providedResourceScanner.removeProvidedResources(rsrcProvider);
 				} else {
 					myPlainProviders.remove(provider);

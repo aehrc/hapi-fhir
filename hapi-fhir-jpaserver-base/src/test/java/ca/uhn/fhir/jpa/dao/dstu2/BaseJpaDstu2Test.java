@@ -14,7 +14,6 @@ import ca.uhn.fhir.jpa.search.DatabaseBackedPagingProvider;
 import ca.uhn.fhir.jpa.search.ISearchCoordinatorSvc;
 import ca.uhn.fhir.jpa.sp.ISearchParamPresenceSvc;
 import ca.uhn.fhir.jpa.util.ResourceCountCache;
-import ca.uhn.fhir.jpa.util.SingleItemLoadingCache;
 import ca.uhn.fhir.model.dstu2.composite.CodeableConceptDt;
 import ca.uhn.fhir.model.dstu2.composite.CodingDt;
 import ca.uhn.fhir.model.dstu2.composite.MetaDt;
@@ -42,7 +41,6 @@ import org.springframework.transaction.support.TransactionTemplate;
 import javax.persistence.EntityManager;
 import java.io.IOException;
 import java.io.InputStream;
-import java.util.Map;
 
 import static org.junit.Assert.*;
 import static org.mockito.Mockito.mock;
@@ -63,6 +61,9 @@ public abstract class BaseJpaDstu2Test extends BaseJpaTest {
 	@Autowired
 	@Qualifier("mySearchParameterDaoDstu2")
 	protected IFhirResourceDao<SearchParameter> mySearchParameterDao;
+	@Autowired
+	@Qualifier("myCommunicationDaoDstu2")
+	protected IFhirResourceDao<Communication> myCommunicationDao;
 	@Autowired
 	@Qualifier("myBundleDaoDstu2")
 	protected IFhirResourceDao<Bundle> myBundleDao;
@@ -181,12 +182,13 @@ public abstract class BaseJpaDstu2Test extends BaseJpaTest {
 	}
 
 	@Before
-	@Transactional
 	public void beforeFlushFT() {
-		FullTextEntityManager ftem = Search.getFullTextEntityManager(myEntityManager);
-		ftem.purgeAll(ResourceTable.class);
-		ftem.purgeAll(ResourceIndexedSearchParamString.class);
-		ftem.flushToIndexes();
+		runInTransaction(() -> {
+			FullTextEntityManager ftem = Search.getFullTextEntityManager(myEntityManager);
+			ftem.purgeAll(ResourceTable.class);
+			ftem.purgeAll(ResourceIndexedSearchParamString.class);
+			ftem.flushToIndexes();
+		});
 
 		myDaoConfig.setSchedulingDisabled(true);
 		myDaoConfig.setIndexMissingFields(DaoConfig.IndexEnabledEnum.ENABLED);
@@ -194,7 +196,7 @@ public abstract class BaseJpaDstu2Test extends BaseJpaTest {
 
 	@Before
 	@Transactional()
-	public void beforePurgeDatabase() {
+	public void beforePurgeDatabase() throws InterruptedException {
 		purgeDatabase(myDaoConfig, mySystemDao, mySearchParamPresenceSvc, mySearchCoordinatorSvc, mySearchParamRegistry);
 	}
 
@@ -226,6 +228,7 @@ public abstract class BaseJpaDstu2Test extends BaseJpaTest {
 		return newJsonParser.parseResource(type, string);
 	}
 
+	@Override
 	public TransactionTemplate newTxTemplate() {
 		TransactionTemplate retVal = new TransactionTemplate(myTxManager);
 		retVal.setPropagationBehavior(TransactionTemplate.PROPAGATION_REQUIRES_NEW);
@@ -233,6 +236,7 @@ public abstract class BaseJpaDstu2Test extends BaseJpaTest {
 		return retVal;
 	}
 
+	@SuppressWarnings("RedundantThrows")
 	@AfterClass
 	public static void afterClassClearContext() throws Exception {
 		TestUtil.clearAllStaticFieldsForUnitTest();
