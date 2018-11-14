@@ -10,7 +10,7 @@
 	</parent>
 
 	<artifactId>hapi-fhir-structures-r4</artifactId>
-        <version>3.5.1.CSIRO-SNAPSHOT</version>
+        <version>3.6.1.CSIRO-SNAPSHOT</version>
 	<packaging>bundle</packaging>
 
 	<name>HAPI FHIR Structures - FHIR R4</name>
