@@ -72,7 +72,7 @@ public class Migrator {
 	public void migrate() {
 		ourLog.info("Starting migration with {} tasks", myTasks.size());
 
-		myConnectionProperties = DriverTypeEnum.DERBY_EMBEDDED.newConnectionProperties(myConnectionUrl, myUsername, myPassword);
+		myConnectionProperties = myDriverType.newConnectionProperties(myConnectionUrl, myUsername, myPassword);
 		try {
 			for (BaseTask next : myTasks) {
 				next.setDriverType(myDriverType);
@@ -92,4 +92,5 @@ public class Migrator {
 
 		ourLog.info("Finished migration of {} tasks", myTasks.size());
 	}
+
 }

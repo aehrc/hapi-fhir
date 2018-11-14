@@ -3,7 +3,9 @@ package org.hl7.fhir.r4.elementmodel;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 import org.hl7.fhir.exceptions.DefinitionException;
 import org.hl7.fhir.exceptions.FHIRException;
@@ -12,6 +14,7 @@ import org.hl7.fhir.r4.context.IWorkerContext;
 import org.hl7.fhir.r4.formats.FormatUtilities;
 import org.hl7.fhir.r4.formats.IParser.OutputStyle;
 import org.hl7.fhir.r4.model.StructureDefinition;
+import org.hl7.fhir.r4.model.StructureDefinition.StructureDefinitionKind;
 import org.hl7.fhir.r4.model.StructureDefinition.TypeDerivationRule;
 import org.hl7.fhir.r4.utils.ToolingExtensions;
 import org.hl7.fhir.utilities.Utilities;
@@ -32,8 +35,8 @@ public abstract class ParserBase {
 
   public boolean isPrimitive(String code) {
     return Utilities.existsInList(code, "boolean", "integer", "string", "decimal", "uri", "base64Binary", "instant", "date", "dateTime", "time", "code", "oid", "id", "markdown", "unsignedInt", "positiveInt", "xhtml", "url", "canonical");
-
-//    StructureDefinition sd = context.fetchResource(StructureDefinition.class, "http://hl7.org/fhir/StructureDefinition/"+code);
+    
+//    StructureDefinition sd = context.fetchTypeDefinition(code);
 //    return sd != null && sd.getKind() == StructureDefinitionKind.PRIMITIVETYPE;
 	}
 
@@ -41,7 +44,8 @@ public abstract class ParserBase {
 	protected ValidationPolicy policy;
   protected List<ValidationMessage> errors;
   protected ILinkResolver linkResolver;
-
+  protected boolean showDecorations;
+  
 	public ParserBase(IWorkerContext context) {
 		super();
 		this.context = context;
@@ -118,7 +122,13 @@ public abstract class ParserBase {
     return this;
   }
 
+  public boolean isShowDecorations() {
+    return showDecorations;
+  }
 
+  public void setShowDecorations(boolean showDecorations) {
+    this.showDecorations = showDecorations;
+  }
 
 
 }

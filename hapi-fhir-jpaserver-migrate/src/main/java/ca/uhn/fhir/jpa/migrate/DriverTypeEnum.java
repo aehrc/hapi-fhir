@@ -1,18 +1,21 @@
 package ca.uhn.fhir.jpa.migrate;
 
+import ca.uhn.fhir.rest.server.exceptions.InternalErrorException;
+import org.apache.commons.dbcp2.BasicDataSource;
 import org.apache.commons.lang3.Validate;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.DisposableBean;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DataSourceTransactionManager;
-import org.springframework.jdbc.datasource.SingleConnectionDataSource;
 import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.support.TransactionTemplate;
 
 import javax.annotation.Nonnull;
+import javax.sql.DataSource;
+import java.sql.Connection;
 import java.sql.Driver;
-import java.sql.DriverManager;
-import java.util.Enumeration;
+import java.sql.SQLException;
 
 /*-
  * #%L
@@ -64,13 +67,24 @@ public enum DriverTypeEnum {
 
 	public ConnectionProperties newConnectionProperties(String theUrl, String theUsername, String thePassword) {
 
-		SingleConnectionDataSource dataSource = new SingleConnectionDataSource();
-		dataSource.setAutoCommit(false);
+		Driver driver;
+		try {
+			driver = (Driver) Class.forName(myDriverClassName).newInstance();
+		} catch (ClassNotFoundException | InstantiationException | IllegalAccessException e) {
+			throw new InternalErrorException("Unable to find driver class: " + myDriverClassName, e);
+		}
+
+		BasicDataSource dataSource = new BasicDataSource(){
+			@Override
+			public Connection getConnection() throws SQLException {
+				ourLog.debug("Creating new DB connection");
+				return super.getConnection();
+			}
+		};
 		dataSource.setDriverClassName(myDriverClassName);
 		dataSource.setUrl(theUrl);
 		dataSource.setUsername(theUsername);
 		dataSource.setPassword(thePassword);
-		dataSource.setSuppressClose(true);
 
 		DataSourceTransactionManager transactionManager = new DataSourceTransactionManager();
 		transactionManager.setDataSource(dataSource);
@@ -87,13 +101,13 @@ public enum DriverTypeEnum {
 	public static class ConnectionProperties {
 
 		private final DriverTypeEnum myDriverType;
-		private final SingleConnectionDataSource myDataSource;
+		private final DataSource myDataSource;
 		private final TransactionTemplate myTxTemplate;
 
 		/**
 		 * Constructor
 		 */
-		public ConnectionProperties(SingleConnectionDataSource theDataSource, TransactionTemplate theTxTemplate, DriverTypeEnum theDriverType) {
+		public ConnectionProperties(DataSource theDataSource, TransactionTemplate theTxTemplate, DriverTypeEnum theDriverType) {
 			Validate.notNull(theDataSource);
 			Validate.notNull(theTxTemplate);
 			Validate.notNull(theDriverType);
@@ -108,7 +122,7 @@ public enum DriverTypeEnum {
 		}
 
 		@Nonnull
-		public SingleConnectionDataSource getDataSource() {
+		public DataSource getDataSource() {
 			return myDataSource;
 		}
 
@@ -125,7 +139,13 @@ public enum DriverTypeEnum {
 		}
 
 		public void close() {
-			myDataSource.destroy();
+			if (myDataSource instanceof DisposableBean) {
+				try {
+					((DisposableBean) myDataSource).destroy();
+				} catch (Exception e) {
+					ourLog.warn("Could not dispose of driver", e);
+				}
+			}
 		}
 	}
 }
