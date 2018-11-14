@@ -16,7 +16,7 @@
 	<name>HAPI FHIR Structures - FHIR R4</name>
 
 	<properties>
-		<base.project.version>3.5.0</base.project.version>
+		<base.project.version>3.6.0</base.project.version>
 	</properties>
 
 	<dependencies>
