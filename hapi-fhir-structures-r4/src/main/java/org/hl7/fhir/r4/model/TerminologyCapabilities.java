@@ -48,7 +48,7 @@ import org.hl7.fhir.exceptions.FHIRException;
  */
 @ResourceDef(name="TerminologyCapabilities", profile="http://hl7.org/fhir/StructureDefinition/TerminologyCapabilities")
 @ChildOrder(names={"url", "version", "name", "title", "status", "experimental", "date", "publisher", "contact", "description", "useContext", "jurisdiction", "purpose", "copyright", "kind", "software", "implementation", "lockedDate", "codeSystem", "expansion", "codeSearch", "validateCode", "translation", "closure"})
-public class TerminologyCapabilities extends MetadataResource {
+public class TerminologyCapabilities extends MetadataResource implements IBaseConformance {
 
     public enum CapabilityStatementKind {
         /**
